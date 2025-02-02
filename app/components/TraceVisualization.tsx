@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
     Box,
     Paper,
@@ -46,6 +46,36 @@ interface FilterState {
 interface TraceVisualizationProps {
     initialTraces?: Trace[];
 }
+const transformApiResponse = (apiResponse: any) => {
+    return apiResponse.map((trace: any) => ({
+        id: trace.traceID,
+        endpoint: trace.spans[0]?.operationName || "Unknown",
+        duration: trace.spans.reduce((sum: number, span: any) => sum + span.duration, 0) / 1000, // Convert microseconds to milliseconds
+        spans: trace.spans.length,
+        errors: trace.spans.filter((span: any) =>
+            span.tags.some((tag: any) => tag.key === "http.status_code" && tag.value >= 400)
+        ).length,
+        services: extractServices(trace.processes),
+        timestamp: new Date(trace.spans[0]?.startTime / 1000).toLocaleTimeString(), // Convert timestamp
+    }));
+};
+interface Process {
+    serviceName: string;
+}
+
+const extractServices = (processes: { [key: string]: Process }) => {
+    // Extracting service names from the processes object
+    const services = Object.values(processes).map((process, index) => ({
+        name: process.serviceName,
+        count: 1, // Placeholder; adjust as needed based on your logic
+        color: getRandomColor()
+    }));
+
+    return services;
+};
+const getRandomColor = () => {
+    return "#" + Math.floor(Math.random() * 16777215).toString(16);
+};
 
 const TraceVisualization: React.FC<TraceVisualizationProps> = ({
     initialTraces = [],
@@ -55,26 +85,66 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
         service: "frontend",
         operation: "all",
         tags: "",
-        lookback: "Last Hour",
+        lookback: "1h",
         maxDuration: "",
         minDuration: "",
         limit: 20,
     });
+    const [loading, setLoading] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchTraces = async () => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const endTimestamp = Date.now() * 1000;
+            let startTimestamp = endTimestamp - 3600 * 1000 * 1000;
+
+            if (filters.lookback === "1d") {
+                startTimestamp = endTimestamp - 24 * 3600 * 1000 * 1000;
+            } else if (filters.lookback === "1w") {
+                startTimestamp = endTimestamp - 7 * 24 * 3600 * 1000 * 1000;
+            }
+
+            const params = new URLSearchParams({
+                service: filters.service,
+                lookback: filters.lookback,
+                limit: filters.limit.toString(),
+                start: startTimestamp.toString(),
+                end: endTimestamp.toString(),
+                tags: JSON.stringify({ driver: filters.tags.replace(/^driver=/, "") })
+            });
+
+            const apiUrl = `/api/traces?${params.toString()}`;
+
+            const response = await fetch(apiUrl, {
+                method: "get",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+            });
+            if (!response.ok) {
+                throw new Error(`Failed to fetch traces 1: ${response}`);
+            }
+
+            const data = await response.json();
+            console.log("Fetching:", data.data);
+            setTraces(transformApiResponse(data.data) || []);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to fetch traces 2");
+            console.error("Error fetching traces:", err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchTraces(); // Fetch traces on initial load
+    }, []);
 
     const handleFindTraces = () => {
-        // Mock filtering logic
-        const filteredTraces = initialTraces.filter((trace) => {
-            const matchesService = trace.services.some(
-                (service) => service.name === filters.service
-            );
-            const matchesDuration =
-                (!filters.maxDuration || trace.duration <= parseFloat(filters.maxDuration)) &&
-                (!filters.minDuration || trace.duration >= parseFloat(filters.minDuration));
-            return matchesService && matchesDuration;
-        });
-
-        setTraces(filteredTraces.slice(0, filters.limit)); // Apply limit
-        console.log("Filtered traces:", filteredTraces);
+        fetchTraces(); // Fetch traces when filters are updated
     };
 
     return (
@@ -97,9 +167,9 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
                                     setFilters({ ...filters, service: e.target.value as string })
                                 }
                             >
-                                <MenuItem value="frontend">frontend (7)</MenuItem>
-                                <MenuItem value="backend">backend (5)</MenuItem>
-                                <MenuItem value="database">database (3)</MenuItem>
+                                <MenuItem value="frontend">frontend</MenuItem>
+                                <MenuItem value="backend">backend</MenuItem>
+                                <MenuItem value="database">database</MenuItem>
                             </Select>
                         </FormControl>
 
@@ -113,10 +183,10 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
                                     setFilters({ ...filters, operation: e.target.value as string })
                                 }
                             >
-                                <MenuItem value="all">all (5)</MenuItem>
-                                <MenuItem value="create">create (2)</MenuItem>
-                                <MenuItem value="update">update (3)</MenuItem>
-                                <MenuItem value="delete">delete (1)</MenuItem>
+                                <MenuItem value="all">all</MenuItem>
+                                <MenuItem value="create">create</MenuItem>
+                                <MenuItem value="update">update</MenuItem>
+                                <MenuItem value="delete">delete</MenuItem>
                             </Select>
                         </FormControl>
 
@@ -140,9 +210,9 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
                                     setFilters({ ...filters, lookback: e.target.value as string })
                                 }
                             >
-                                <MenuItem value="Last Hour">Last Hour</MenuItem>
-                                <MenuItem value="Last Day">Last Day</MenuItem>
-                                <MenuItem value="Last Week">Last Week</MenuItem>
+                                <MenuItem value="1h">Last Hour</MenuItem>
+                                <MenuItem value="1d">Last Day</MenuItem>
+                                <MenuItem value="1w">Last Week</MenuItem>
                             </Select>
                         </FormControl>
 
@@ -191,9 +261,17 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
                             color="primary"
                             onClick={handleFindTraces}
                             sx={{ py: 1.5, fontWeight: "bold", boxShadow: 2 }}
+                            disabled={loading}
                         >
-                            Find Traces
+                            {loading ? "Loading..." : "Find Traces"}
                         </Button>
+
+                        {/* Error Message */}
+                        {error && (
+                            <Typography color="error" sx={{ mt: 2 }}>
+                                {error}
+                            </Typography>
+                        )}
                     </Paper>
                 </Grid>
 

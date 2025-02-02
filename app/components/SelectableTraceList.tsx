@@ -85,6 +85,7 @@ const SelectableTraceList: React.FC<SelectableTraceListProps> = ({ traces }) => 
       )}
 
       {traces.map((trace) => (
+        console.log(trace.id + "ád"),
         <Card
           key={trace.id}
           sx={{
@@ -127,9 +128,8 @@ const SelectableTraceList: React.FC<SelectableTraceListProps> = ({ traces }) => 
                     variant="outlined"
                   />
                 </Box>
-
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {trace.services.map((service) => (
+                  {(trace.services ?? []).map((service) => (
                     <Chip
                       key={service.name}
                       label={`${service.name} (${service.count})`}
@@ -139,8 +139,8 @@ const SelectableTraceList: React.FC<SelectableTraceListProps> = ({ traces }) => 
                         color: 'white',
                         '&:hover': {
                           bgcolor: service.color,
-                          opacity: 0.9
-                        }
+                          opacity: 0.9,
+                        },
                       }}
                     />
                   ))}

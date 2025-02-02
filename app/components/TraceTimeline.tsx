@@ -88,9 +88,9 @@ const TraceTimeline: React.FC<TimelineProps> = ({ traces }) => {
             ))}
 
             {/* Timeline points */}
-            {traces.map((trace) => (
+            {traces.map((trace, index) => (
                 <TimelineDot
-                    key={trace.id}
+                    key={trace.id || `trace-${index}`} // Fallback key if id is missing
                     sx={{
                         left: `${getPosition(trace.timestamp)}%`,
                         top: getDurationPosition(trace.duration),
@@ -102,9 +102,9 @@ const TraceTimeline: React.FC<TimelineProps> = ({ traces }) => {
             <TimelineAxis />
 
             {/* Time labels (show only at spaced intervals) */}
-            {traces.filter((_, i) => i % Math.ceil(traces.length / 5) === 0).map((trace) => (
+            {traces.filter((_, i) => i % Math.ceil(traces.length / 5) === 0).map((trace, index) => (
                 <TimelineLabel
-                    key={trace.id}
+                    key={`${trace.id}-${index}`} // Combine trace.id and index for uniqueness
                     sx={{ left: `${getPosition(trace.timestamp)}%` }}
                 >
                     {trace.timestamp}
